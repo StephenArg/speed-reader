@@ -20,6 +20,7 @@ html, body {
     background-color: var(--bg-color);
     color: var(--text-color);
     font-family: Arial, sans-serif;
+    touch-action: manipulation;
 }
 
 #app-container {
@@ -297,6 +298,7 @@ a {
         display: flex;
         flex-direction: column;
         gap: 0.5rem;
+        user-select: none;
     }
 
     /* First row: left side buttons */
@@ -561,6 +563,9 @@ a {
 }
 
 @media (max-width: 768px) {
+    :root {
+        font-size: 14px;
+    }
     .modal-content {
         width: 95%;
         margin: 1rem;
@@ -733,4 +738,62 @@ a {
     height: 100%;
     background-color: var(--progress-color, #4CAF50);
     transition: width 0.3s ease;
+}
+
+.custom-select {
+    position: relative;
+    width: 100%;
+    text-align: left;
+}
+
+.select-selected {
+    padding: 0.5rem;
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    background-color: var(--bg-color);
+    color: var(--text-color);
+    font-size: 1rem;
+    cursor: pointer;
+    text-align: left;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding-right: 0.2rem;
+}
+
+.select-options {
+    display: none;
+    position: absolute;
+    top: 100%;
+    left: 0;
+    right: 0;
+    background-color: var(--bg-color);
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    margin-top: 4px;
+    max-height: 200px;
+    overflow-y: auto;
+    z-index: 1000;
+    text-align: left;
+}
+
+.select-options.show {
+    display: block;
+}
+
+.select-option {
+    padding: 0.5rem;
+    cursor: pointer;
+    transition: background-color 0.2s;
+}
+
+.select-option:hover {
+    background-color: var(--container-bg);
+}
+
+.arrow-down {
+    font-size: 0.8rem;
+    opacity: 0.7;
+    margin-left: 0.5rem;
+    color: color-mix(in SRGB, var(--text-color), black) !important;
 }

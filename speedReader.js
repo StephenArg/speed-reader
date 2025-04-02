@@ -103,6 +103,75 @@ function handleProgressBarClick(event) {
     }
 }
 
+// Add new drag functionality
+function setupProgressBarDrag() {
+    const progressContainer = document.getElementById('progress-container');
+    let isDragging = false;
+    let rafId = null;
+
+    function updateProgressFromEvent(event) {
+        const rect = progressContainer.getBoundingClientRect();
+        const x = event.clientX - rect.left;
+        const width = rect.width;
+        const percentage = Math.max(0, Math.min(1, x / width));
+        
+        // Calculate new index based on drag position
+        const newIndex = Math.floor(percentage * (presentationText.length - 1));
+        if (newIndex >= 0 && newIndex < presentationText.length) {
+            currentIndex = newIndex;
+            updateDisplay(document.getElementById('speedReader-text'));
+            updateProgressBar();
+        }
+    }
+
+    function startDragging(event) {
+        isDragging = true;
+        if (isPlaying) {
+            togglePlayPause();
+        }
+        updateProgressFromEvent(event);
+    }
+
+    function stopDragging() {
+        isDragging = false;
+        if (rafId) {
+            cancelAnimationFrame(rafId);
+            rafId = null;
+        }
+        localStorage.setItem(localStorageBookProgress, JSON.stringify(chapterProgress));
+    }
+
+    function handleDrag(event) {
+        if (isDragging) {
+            event.preventDefault();
+            if (rafId) {
+                cancelAnimationFrame(rafId);
+            }
+            rafId = requestAnimationFrame(() => {
+                updateProgressFromEvent(event);
+                rafId = null;
+            });
+        }
+    }
+
+    // Mouse events
+    progressContainer.addEventListener('mousedown', startDragging);
+    document.addEventListener('mousemove', handleDrag);
+    document.addEventListener('mouseup', stopDragging);
+    document.addEventListener('mouseleave', stopDragging);
+
+    // // Touch events
+    // progressContainer.addEventListener('touchstart', (e) => {
+    //     e.preventDefault();
+    //     startDragging(e.touches[0]);
+    // }, { passive: false });
+    // document.addEventListener('touchmove', (e) => {
+    //     e.preventDefault();
+    //     handleDrag(e.touches[0]);
+    // }, { passive: false });
+    // document.addEventListener('touchend', stopDragging);
+}
+
 async function requestWakeLock() {
   try {
     wakeLock = await navigator.wakeLock.request("screen");
@@ -118,42 +187,54 @@ async function togglePlayPause() {
     const textElement = document.getElementById('speedReader-text');
     
     if (!isPlaying) {
-        if (currentIndex === presentationText.length - 1) {
-            // If we're at the end of a chapter, show chapter selection
-            if (currentChapter) {
-                showChapterSelection(await currentBook.toc);
-            } else {
-                currentIndex = 0;
-            }
+      if (currentIndex === presentationText.length - 1) {
+        // If we're at the end of a chapter, show chapter selection
+        if (currentChapter) {
+          const toc = await currentBook.toc;
+          if (!toc || toc.length === 0) {
+            const spine = await currentBook.spine;
+            const chapters = spine.items.map((item, index) => ({
+              id: item.id,
+              label: `Chapter ${index + 1}`,
+              href: item.href
+            }));
+            showChapterSelection(chapters);
+          } else {
+            showChapterSelection(toc);
+          }
+          return;
+        } else {
+          currentIndex = 0;
         }
+      }
         
-        // Start playing
-        //await requestWakeLock();
-        isPlaying = true;
-        playIcon.innerHTML = '<rect x="6" y="4" width="4" height="16"></rect><rect x="14" y="4" width="4" height="16"></rect>';
-        
-        const interval = (60 / readingSpeed) * 1000; // Convert WPM to milliseconds
-        playInterval = setInterval(() => {
-            if (currentIndex < presentationText.length - 1) {
-                currentIndex++;
-                updateDisplay(textElement);
-                updateProgressBar();
-            } else {
-                togglePlayPause(); // Stop when reaching the end
-            }
-        }, interval);
+      // Start playing
+      await requestWakeLock();
+      isPlaying = true;
+      playIcon.innerHTML = '<rect x="6" y="4" width="4" height="16"></rect><rect x="14" y="4" width="4" height="16"></rect>';
+      
+      const interval = (60 / readingSpeed) * 1000; // Convert WPM to milliseconds
+      playInterval = setInterval(() => {
+        if (currentIndex < presentationText.length - 1) {
+          currentIndex++;
+          updateDisplay(textElement);
+          updateProgressBar();
+        } else {
+          togglePlayPause(); // Stop when reaching the end
+        }
+      }, interval);
     } else {
         // Pause
         localStorage.setItem(localStorageBookProgress, JSON.stringify(chapterProgress));
         isPlaying = false;
         playIcon.innerHTML = '<polygon points="5 3 19 12 5 21 5 3"></polygon>';
         clearInterval(playInterval);
-        // if (wakeLock) {
-        //   wakeLock.release().then(() => {
-        //     wakeLock = null;
-        //     console.log("Wake Lock released");
-        //   });
-        // }
+        if (wakeLock) {
+          wakeLock.release().then(() => {
+            wakeLock = null;
+            console.log("Wake Lock released");
+          });
+        }
     }
 }
 
@@ -447,7 +528,7 @@ async function showChapterSelection(toc) {
     const chapterList = document.getElementById('chapter-list');
     chapterList.innerHTML = '';
 
-    togglePlayPause();
+    if (isPlaying) togglePlayPause();
 
     if (Object.keys(chapterProgress).length === 0) {
       chapterProgress = JSON.parse(localStorage.getItem(localStorageBookProgress) || '{}') || {};
@@ -765,43 +846,52 @@ function handleKeyDown(e) {
 }
 
 function handleKeyUp(e) {
-    if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') {
-        e.preventDefault();
-        
-        if (keyHoldInterval) {
-            clearInterval(keyHoldInterval);
-            keyHoldInterval = null;
-        }
-        keyHoldStartTime = 0;
-        currentSkipAmount = 1;
-        localStorage.setItem(localStorageBookProgress, JSON.stringify(chapterProgress));
-    } else if (e.key === ' ') {
-        togglePlayPause();
-    } else if (e.key === 'Enter') {
-        const startButton = document.getElementById('start-reading-btn');
-        if (startButton.style.display === 'block') {
-            startButton.click();
-        }
-    } else if (e.key === 'Backspace' || e.key === 'Delete' || e.key === 'Escape' || e.key.toLowerCase() === 'n') {
-        showTextInputAgain();
-    } else if (e.key === 'h') {
-        showHistory();
-    } else if (e.key === 's') {
-        showSettings();
-    } 
-    else if (e.key === '1' || e.key === '2' || e.key === '3' || e.key === '4' || e.key === '5') {
-        const historyModal = document.getElementById('history-modal');
-        if (historyModal.classList.contains('show')) {
-            const historyList = historyModal.getElementsByClassName('history-list')[0];
-            const index = parseInt(e.key);
-            if (index >= 1 && index <= historyList.children.length) {
-                const historyItem = historyList.children[index - 1];
-                if (historyItem) {
-                    historyItem.click();
-                }
-            }
-        }
+  if (e.key === 'Enter') {
+    e.preventDefault();
+    const startButton = document.getElementById('start-reading-btn');
+    if (startButton.style.display === 'block') {
+      startButton.click();
     }
+    return;
+  }
+
+  const textInput = document.getElementById('speedReader-text-input');
+  if (textInput.style.display === 'initial') return;
+
+  if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') {
+    e.preventDefault();
+    
+    if (keyHoldInterval) {
+      clearInterval(keyHoldInterval);
+      keyHoldInterval = null;
+    }
+    keyHoldStartTime = 0;
+    currentSkipAmount = 1;
+    localStorage.setItem(localStorageBookProgress, JSON.stringify(chapterProgress));
+  } else if (e.key === ' ') {
+    togglePlayPause();
+  } else if (e.key === 'Backspace' || e.key === 'Delete' || e.key === 'Escape' || e.key.toLowerCase() === 'n') {
+    showTextInputAgain();
+  } else if (e.key === 'h') {
+    e.preventDefault();
+    showHistory();
+  } else if (e.key === 's') {
+    e.preventDefault();
+    showSettings();
+  } 
+  else if (e.key === '1' || e.key === '2' || e.key === '3' || e.key === '4' || e.key === '5') {
+      const historyModal = document.getElementById('history-modal');
+      if (historyModal.classList.contains('show')) {
+          const historyList = historyModal.getElementsByClassName('history-list')[0];
+          const index = parseInt(e.key);
+          if (index >= 1 && index <= historyList.children.length) {
+              const historyItem = historyList.children[index - 1];
+              if (historyItem) {
+                  historyItem.click();
+              }
+          }
+      }
+  }
 }
 
 function skipText(amount) {
@@ -835,6 +925,53 @@ document.addEventListener('DOMContentLoaded', () => {
     const historyBtn = document.getElementById('history-btn');
     const closeHistoryBtn = document.getElementById('close-history');
     const chapterSelectorBtn = document.getElementById('chapter-selector-btn');
+    const selectSelected = document.getElementById('font-preview');
+    const selectOptions = document.querySelector('.select-options');
+    const fontSetting = document.getElementById('font-setting');
+    const modalContent = document.getElementsByClassName('modal-content')[0];
+
+    modalContent.addEventListener('click', (e) => {
+        if (e.target.id === 'font-preview') {
+            const selectOptions = document.querySelector('.select-options');
+            if (selectOptions.classList.contains('show')) selectOptions.classList.add('show');
+            else selectOptions.classList.remove('show');
+        } else if (!e.target.closest('.select-options')) {
+            const selectOptions = document.querySelector('.select-options');
+            if (selectOptions.classList.contains('show')) {
+                selectOptions.classList.remove('show');
+            }
+        }
+    });
+
+    // Toggle dropdown
+    selectSelected.addEventListener('click', () => {
+        selectOptions.classList.toggle('show');
+    });
+
+    // Handle option selection
+    selectOptions.addEventListener('click', (e) => {
+        if (e.target.classList.contains('select-option')) {
+            const value = e.target.dataset.value;
+            const fontFamily = e.target.style.fontFamily;
+            
+            // Update preview
+            selectSelected.textContent = value;
+            selectSelected.style.fontFamily = fontFamily;
+            
+            // Update hidden select
+            fontSetting.value = value;
+            
+            // Trigger change event
+            const event = new Event('change');
+            fontSetting.dispatchEvent(event);
+            
+            // Close dropdown
+            selectOptions.classList.remove('show');
+        }
+    });
+
+    // Initialize preview with current font
+    selectSelected.style.fontFamily = settings.fontFamily;
     
     // Tooltip configuration
     const tooltipConfig = {
@@ -1002,6 +1139,10 @@ document.addEventListener('DOMContentLoaded', () => {
     // Close modal when clicking outside
     document.getElementById('settings-modal').addEventListener('click', (e) => {
         if (e.target === e.currentTarget) {
+            const selectOptions = document.querySelector('.select-options');
+            if (selectOptions.classList.contains('show')) {
+                selectOptions.classList.remove('show');
+            }
             hideSettings();
         }
     });
@@ -1030,28 +1171,28 @@ document.addEventListener('DOMContentLoaded', () => {
     closeChapterBtn.addEventListener('click', hideChapterSelection);
     
     deleteBookBtn.addEventListener('click', () => {
-        if (confirm('Are you sure you want to delete this book\'s progress? This action cannot be undone.')) {
-            // Delete the book progress from localStorage
-            if (localStorageBookProgress) {
-                localStorage.removeItem(localStorageBookProgress);
-                chapterProgress = {};
-            }
-            
-            // Reset the book state
-            currentBook = null;
-            currentChapter = null;
-            localStorageBookProgress = null;
-            
-            // Hide the chapter selector button
-            const chapterSelectorBtn = document.getElementById('chapter-selector-btn');
-            chapterSelectorBtn.style.display = 'none';
-            
-            // Hide the modal
-            hideChapterSelection();
-            
-            // Show the text input again
-            showTextInputAgain();
+      if (confirm('Are you sure you want to delete this book\'s progress? This action cannot be undone.')) {
+        // Delete the book progress from localStorage
+        if (localStorageBookProgress) {
+          localStorage.removeItem(localStorageBookProgress);
+          chapterProgress = {};
         }
+        
+        // Reset the book state
+        currentBook = null;
+        currentChapter = null;
+        localStorageBookProgress = null;
+        
+        // Hide the chapter selector button
+        const chapterSelectorBtn = document.getElementById('chapter-selector-btn');
+        chapterSelectorBtn.style.display = 'none';
+        
+        // Hide the modal
+        hideChapterSelection();
+        
+        // Show the text input again
+        showTextInputAgain();
+      }
     });
 
     // Close chapter modal when clicking outside
@@ -1078,4 +1219,7 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         }
     });
+
+    // Setup progress bar drag functionality
+    setupProgressBarDrag();
 });
