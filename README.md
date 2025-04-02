@@ -88,6 +88,7 @@ The application is compatible with modern browsers that support:
 2. Install dependencies (if any)
 3. Serve the application using a web server
 4. Access the application through your web browser
+5. Requires /speed-reader/add and /speed-reader/prev to add and provide up to 5 previous sample tests
 
 ## Usage
 
